@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -386,22 +387,48 @@ func (s *Session) run() {
 	}
 
 	// --- dial ---------------------------------------------------------------
-	wsURL := s.rx.WSURL() + "/" + strconv.FormatInt(time.Now().Unix()&0xffffffff, 10) + "/SND"
-	dctx, dcancel := context.WithTimeout(s.ctx, s.cfg.DialTimeout+s.cfg.DialTimeout)
-	conn, err := kiwiws.Dial(dctx, wsURL, &kiwiws.Options{
-		Dialer:           s.cfg.Policy.Dialer(s.cfg.DialTimeout),
-		UserAgent:        Ident,
-		MaxMessageBytes:  s.cfg.MaxMessageBytes,
-		HandshakeTimeout: s.cfg.DialTimeout,
-		ReadTimeout:      s.cfg.FirstMessageTimeout,
-		WriteTimeout:     5 * time.Second,
-	})
-	dcancel()
+	dial := func(host string, port int) (*kiwiws.Conn, error) {
+		scheme := "ws"
+		if s.rx.Scheme == "https" {
+			scheme = "wss"
+		}
+		wsURL := scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/" + strconv.FormatInt(time.Now().Unix()&0xffffffff, 10) + "/SND"
+		dctx, dcancel := context.WithTimeout(s.ctx, s.cfg.DialTimeout+s.cfg.DialTimeout)
+		defer dcancel()
+		return kiwiws.Dial(dctx, wsURL, &kiwiws.Options{
+			Dialer:           s.cfg.Policy.Dialer(s.cfg.DialTimeout),
+			UserAgent:        Ident,
+			MaxMessageBytes:  s.cfg.MaxMessageBytes,
+			HandshakeTimeout: s.cfg.DialTimeout,
+			ReadTimeout:      s.cfg.FirstMessageTimeout,
+			WriteTimeout:     5 * time.Second,
+		})
+	}
+	conn, err := dial(s.rx.Host, s.rx.Port)
+	if err != nil {
+		// The one redirect that is honoured: kiwisdr.com's own reverse proxy
+		// moving a receiver from <name>.proxy.kiwisdr.com to
+		// <name>.proxy2.kiwisdr.com. Same operator, same label, fixed port;
+		// the alternate host goes through the same policy dialer. Anything
+		// else that looks like a redirect is refused below.
+		var nu *kiwiws.ErrNotUpgraded
+		if errors.As(err, &nu) {
+			if alt, ok := ProxyAlternate(s.rx.Host, nu.Location); ok {
+				log.Info("receiver moved to the second kiwisdr.com proxy; retrying there", "host", alt)
+				conn, err = dial(alt, proxyPort)
+			}
+		}
+	}
 	if err != nil {
 		var nu *kiwiws.ErrNotUpgraded
 		switch {
 		case errors.As(err, &nu):
-			if nu.Location != "" {
+			if strings.Contains(nu.Location, "kiwi_not_found") {
+				// kiwisdr.com's proxy answers this way when the receiver
+				// behind it is not connected: it is offline, whatever the
+				// directory snapshot says.
+				s.fail(&CloseError{Reason: ReasonDown, Detail: "not connected to the kiwisdr.com proxy"})
+			} else if nu.Location != "" {
 				log.Warn("receiver redirected; refused", "status", nu.StatusCode, "location", sanitize.ForLog(nu.Location, 100))
 				s.fail(&CloseError{Reason: ReasonRedirect, Detail: fmt.Sprintf("HTTP %d", nu.StatusCode)})
 			} else {
@@ -532,7 +559,11 @@ func (s *Session) run() {
 						return
 					}
 				case "too_busy":
-					s.fail(&CloseError{Reason: ReasonReceiverFull, Detail: "all channels in use"})
+					// The value is rx_chans when the receiver is genuinely full
+					// at connect time, or ext_api_nchans when the server's
+					// app-fingerprint check kicked an established session.
+					log.Warn("receiver sent too_busy", "value", sanitize.ForLog(p.Value, 8), "after", time.Since(s.start).Round(time.Second))
+					s.fail(&CloseError{Reason: ReasonReceiverFull, Detail: "all channels in use (too_busy=" + sanitize.Text(p.Value, 8) + ")"})
 					return
 				case "down":
 					s.fail(&CloseError{Reason: ReasonDown})
@@ -543,6 +574,10 @@ func (s *Session) run() {
 					return
 				case "exclusive_use", "wb_only", "inactivity_timeout", "ip_limit", "camp_disconnect":
 					s.fail(&CloseError{Reason: ReasonRefused, Detail: p.Name})
+					return
+				case "kiwi_kick":
+					// The operator kicked us from the admin page. Leave at once.
+					s.fail(&CloseError{Reason: ReasonRefused, Detail: "kicked by the receiver operator"})
 					return
 				case "version_maj":
 					version = sanitize.Text(p.Value, 8)
@@ -628,6 +663,34 @@ func (s *Session) run() {
 			// toward rate and byte caps above.
 		}
 	}
+}
+
+const (
+	proxyDomain  = ".proxy.kiwisdr.com"
+	proxy2Domain = ".proxy2.kiwisdr.com"
+	proxyPort    = 8073
+)
+
+// ProxyAlternate reports the host to retry when a receiver listed at
+// <label>.proxy.kiwisdr.com answers the upgrade with a redirect to
+// <label>.proxy2.kiwisdr.com. The label must match exactly, the scheme must
+// be http, and the port must be absent or 8073. Everything else is false.
+func ProxyAlternate(host, location string) (string, bool) {
+	label, ok := strings.CutSuffix(host, proxyDomain)
+	if !ok || label == "" || strings.Contains(label, ".") {
+		return "", false
+	}
+	u, err := url.Parse(location)
+	if err != nil || u.Scheme != "http" || u.User != nil {
+		return "", false
+	}
+	if u.Hostname() != label+proxy2Domain {
+		return "", false
+	}
+	if p := u.Port(); p != "" && p != strconv.Itoa(proxyPort) {
+		return "", false
+	}
+	return label + proxy2Domain, true
 }
 
 func (s *Session) audioSeconds() float64 {

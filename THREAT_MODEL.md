@@ -73,7 +73,7 @@ treat it as a hostile receiver," which is the case we already defend against.
 | `net.Dialer.Control` hook inspects the **resolved** IP of every connection attempt, so a hostname that resolves (or re-resolves) to a private address is refused at connect time. | `internal/netpolicy` |
 | Rejected: unspecified, loopback, RFC 1918 private, link-local (169.254/16, fe80::/10), CGNAT 100.64/10, multicast, broadcast, 0.0.0.0/8, documentation and benchmarking ranges, 6to4/Teredo/NAT64 prefixes, IPv4-mapped and NAT64 addresses are unwrapped and the inner IPv4 is checked, ULA fc00::/7, IPv6 site-local, Discard-Only, ORCHID. | `internal/netpolicy` |
 | Ports: 80, 443, 1024..65535 only. | `internal/netpolicy` |
-| No redirects: a non-101 WebSocket response is terminal. The `Location` header is logged sanitised and never followed. | `internal/kiwiws` |
+| No redirects: a non-101 WebSocket response is terminal. The `Location` header is logged sanitised and never followed, with one pattern-matched exception: a receiver listed at `<label>.proxy.kiwisdr.com` whose 307 points at exactly `<label>.proxy2.kiwisdr.com` (http, port absent or 8073, no userinfo) is retried at that host, once, through the same policy dialer. Same operator, same label, fixed port; `ProxyAlternate` has a table test of the refusals. | `internal/kiwiws`, `internal/relay` |
 | TLS used whenever the directory URL is `https`; TLS 1.2 minimum, verified. | `internal/kiwiws` |
 | Dial timeout 10 s, handshake timeout 10 s. | `internal/kiwiws` |
 

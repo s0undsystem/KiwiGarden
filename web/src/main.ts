@@ -61,11 +61,15 @@ const lbTemplate = el<HTMLTemplateElement>("lb-entry");
 const lbExportJSON = el<HTMLButtonElement>("lb-export-json");
 const lbExportCSV = el<HTMLButtonElement>("lb-export-csv");
 
-// Seek: step through the band and stop on the first channel whose
-// S-meter sits well above the noise floor the receiver has been reporting.
+// Seek: step through the bands and stop on the first channel that is both
+// well above the noise floor and *modulated*. Signal strength alone stops
+// on carriers, data bursts and static crashes; speech and music make the
+// audio envelope swing, so the coefficient of variation of ~21 ms block
+// RMS values is the second test (hiss ~0.1, carrier ~0.05, speech ~0.5+).
 const SEEK_STEP = 5; // kHz, broadcast channel spacing
-const SEEK_DWELL_MS = 650; // enough for the AGC and two or three frames
-const SEEK_MARGIN_DB = 14;
+const SEEK_DWELL_MS = 950; // AGC settle plus four or five audio frames
+const SEEK_MARGIN_DB = 10;
+const SEEK_MIN_MOD = 0.3;
 
 function showOverlay(msg: string): void {
   overlayMsg.textContent = msg;
@@ -111,7 +115,7 @@ function reasonText(ev: StatusEvent): string {
     case "redirect_refused":
       return "receiver tried to redirect us (refused)";
     case "receiver_down":
-      return "receiver is down";
+      return ev.detail?.includes("proxy") ? "receiver is offline right now" : "receiver is down";
     case "receiver_closed":
       return "receiver closed the connection";
     case "unexpected_sample_rate":
@@ -275,7 +279,17 @@ async function main(): Promise<void> {
   let seekTimer: number | null = null;
   let seekDir = 0;
   let noiseFloor = -110;
+  let onNewChannel = false; // set once the NEW_FREQ frame has passed
   const recentRssi: number[] = [];
+  const recentBlocks: number[] = [];
+  let lastMod = 0;
+  function modulation(blocks: number[]): number {
+    if (blocks.length < 8) return 0;
+    const mean = blocks.reduce((a, b) => a + b, 0) / blocks.length;
+    if (mean < 1e-4) return 0; // silence or a bare carrier
+    const v = blocks.reduce((a, b) => a + (b - mean) * (b - mean), 0) / blocks.length;
+    return Math.sqrt(v) / mean;
+  }
   /**
    * Next 5 kHz channel in the seek direction, staying inside the broadcast
    * bands: leaving a band jumps to the next one, and the ends wrap. A
@@ -310,21 +324,26 @@ async function main(): Promise<void> {
     const start = freq;
     const step = (): void => {
       if (seekDir === 0) return;
-      // Decide on the channel just dwelt on.
+      // Decide on the channel just dwelt on: strong AND modulated.
       if (recentRssi.length >= 2) {
         const avg = recentRssi.reduce((a, b) => a + b, 0) / recentRssi.length;
         noiseFloor = Math.min(noiseFloor * 0.9 + avg * 0.1, avg); // tracks down fast, up slowly
-        if (avg > noiseFloor + SEEK_MARGIN_DB && Math.abs(freq - start) >= SEEK_STEP) {
+        lastMod = modulation(recentBlocks);
+        if (avg > noiseFloor + SEEK_MARGIN_DB && lastMod > SEEK_MIN_MOD && Math.abs(freq - start) >= SEEK_STEP) {
           stopSeek();
           return;
         }
       }
       recentRssi.length = 0;
+      recentBlocks.length = 0;
+      onNewChannel = false;
       const next = nextChannel(freq, seekDir);
       applyTune(next, mode, true);
       seekTimer = window.setTimeout(step, SEEK_DWELL_MS);
     };
     recentRssi.length = 0;
+    recentBlocks.length = 0;
+    onNewChannel = true; // the current channel is already settled
     seekTimer = window.setTimeout(step, SEEK_DWELL_MS);
   }
   for (const b of seekButtons) b.addEventListener("click", () => seek(Number(b.dataset.seek)));
@@ -365,7 +384,7 @@ async function main(): Promise<void> {
     if (player.state !== "playing") return;
     const buf = `${s.buffered.toFixed(2)} s buffered`;
     const under = s.underruns ? ` · ${s.underruns} underruns` : "";
-    const seeking = seekDir !== 0 ? " · seeking" : "";
+    const seeking = seekDir !== 0 ? ` · seeking (mod ${lastMod.toFixed(2)})` : "";
     setStatus(`${liveLabel} · ${buf}${under}${seeking}`, "live");
   });
   player.on("status", (ev) => {
@@ -398,9 +417,17 @@ async function main(): Promise<void> {
 
   // S-meter: smooth the per-frame reading a little; the bar spans -127 to -43 dBm.
   let rssiSmooth = -127;
-  player.on("rssi", (dBm, flags) => {
+  player.on("rssi", (dBm, flags, blocks) => {
     rssiSmooth += (dBm - rssiSmooth) * 0.35;
-    if (seekDir !== 0 && !(flags & 0x04)) recentRssi.push(dBm); // skip the retune frame itself
+    if (seekDir !== 0) {
+      // Frames before the NEW_FREQ frame belong to the previous channel; the
+      // NEW_FREQ frame itself carries the AGC transient. Measure after it.
+      if (flags & 0x04) onNewChannel = true;
+      else if (onNewChannel) {
+        recentRssi.push(dBm);
+        for (const b of blocks) recentBlocks.push(b);
+      }
+    }
     const pct = Math.max(0, Math.min(100, ((rssiSmooth + 127) / 84) * 100));
     smeterBar.style.width = `${pct.toFixed(1)}%`;
     smeterText.textContent = `${sUnits(rssiSmooth)} · ${rssiSmooth.toFixed(0)} dBm${flags & 0x02 ? " · ADC OV" : ""}`;

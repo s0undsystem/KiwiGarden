@@ -512,6 +512,36 @@ func TestValidateTune(t *testing.T) {
 	}
 }
 
+func TestProxyAlternate(t *testing.T) {
+	good := [][2]string{
+		{"ag4nd.proxy.kiwisdr.com", "http://ag4nd.proxy2.kiwisdr.com/1791638878/snd"},
+		{"ag4nd.proxy.kiwisdr.com", "http://ag4nd.proxy2.kiwisdr.com:8073/1/SND"},
+	}
+	for _, g := range good {
+		if alt, ok := ProxyAlternate(g[0], g[1]); !ok || alt != "ag4nd.proxy2.kiwisdr.com" {
+			t.Errorf("%v: got %q %v", g, alt, ok)
+		}
+	}
+	bad := [][2]string{
+		{"ag4nd.proxy.kiwisdr.com", "http://evil.example/"},
+		{"ag4nd.proxy.kiwisdr.com", "http://other.proxy2.kiwisdr.com/"},              // label mismatch
+		{"ag4nd.proxy.kiwisdr.com", "http://ag4nd.proxy2.kiwisdr.com.evil.example/"}, // suffix trick
+		{"ag4nd.proxy.kiwisdr.com", "http://ag4nd.proxy2.kiwisdr.com:22/"},           // wrong port
+		{"ag4nd.proxy.kiwisdr.com", "https://ag4nd.proxy2.kiwisdr.com/"},             // proxy is http only
+		{"ag4nd.proxy.kiwisdr.com", "http://u:p@ag4nd.proxy2.kiwisdr.com/"},          // userinfo
+		{"ag4nd.proxy.kiwisdr.com", "http://ag4nd.proxy3.kiwisdr.com/"},              // only proxy2
+		{"sdr.example.com", "http://sdr.proxy2.kiwisdr.com/"},                        // not a proxy host
+		{"a.b.proxy.kiwisdr.com", "http://a.b.proxy2.kiwisdr.com/"},                  // multi-label
+		{"ag4nd.proxy.kiwisdr.com", ""},
+		{"ag4nd.proxy.kiwisdr.com", "://bad"},
+	}
+	for _, b := range bad {
+		if alt, ok := ProxyAlternate(b[0], b[1]); ok {
+			t.Errorf("%v: accepted %q", b, alt)
+		}
+	}
+}
+
 func TestNoExecAnywhere(t *testing.T) {
 	// The threat model promises no os/exec. Enforced by grep in the server
 	// package test (which has the repo root); here we just assert the

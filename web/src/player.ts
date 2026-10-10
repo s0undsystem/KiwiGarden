@@ -28,7 +28,9 @@ export interface BufferStats {
 
 export interface PlayerEvents {
   status: (st: StatusEvent) => void;
-  rssi: (dBm: number, flags: number) => void;
+  /** Per audio frame: S-meter, flags, and the RMS of each ~21 ms block of
+   *  the frame's audio (used by seek to tell modulation from hiss). */
+  rssi: (dBm: number, flags: number, blockRms: Float32Array) => void;
   state: (s: PlayerState) => void;
   stats: (s: BufferStats) => void;
 }
@@ -167,8 +169,9 @@ export class Player {
       const rssi = dv.getUint16(2, true) / 10 - 127;
       const pcm = data.slice(8);
       if (pcm.byteLength % 2 !== 0) return;
+      const blocks = blockRms(new Int16Array(pcm), 256);
       this.node?.port.postMessage({ type: "pcm", buf: pcm }, [pcm]);
-      this.handlers.rssi?.(rssi, flags);
+      this.handlers.rssi?.(rssi, flags, blocks);
     }
   }
 
@@ -226,6 +229,22 @@ export class Player {
   get current(): { rx: string; freq: number; mode: string } | null {
     return this.wanted ? { ...this.wanted } : null;
   }
+}
+
+/** RMS of consecutive blocks of `size` samples, normalised to [0, 1]. */
+function blockRms(pcm: Int16Array, size: number): Float32Array {
+  const n = Math.floor(pcm.length / size);
+  const out = new Float32Array(n);
+  for (let b = 0; b < n; b++) {
+    let acc = 0;
+    const base = b * size;
+    for (let i = 0; i < size; i++) {
+      const v = pcm[base + i]! / 32768;
+      acc += v * v;
+    }
+    out[b] = Math.sqrt(acc / size);
+  }
+  return out;
 }
 
 /** S-meter conversion: S9 = -73 dBm, 6 dB per S-unit below, dB over 9 above. */

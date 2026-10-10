@@ -46,19 +46,25 @@ export const PRESETS: Preset[] = [
   { group: "utility", label: "HFGCS military (USB)", freq: 11175, mode: "usb" },
 ];
 
-/** Broadcast bands seek moves through, in kHz. Tropical bands included. */
+/**
+ * Bands seek moves through, in kHz. The ITU broadcast allocations, widened
+ * where broadcasters actually operate: the tropical bands, the European
+ * pirate segment above 49 m, and the out-of-band channels the US private
+ * stations use by day (WWCR 15825 / 13845 / 12160 / 9980, WTWW 9475,
+ * WRMI 9955, WBCQ 7490 / 9330, WTWW 5085 and WWCR 4840 at night).
+ */
 export const BANDS: { lo: number; hi: number }[] = [
   { lo: 2300, hi: 2495 },
   { lo: 3200, hi: 3400 },
   { lo: 3900, hi: 4000 },
-  { lo: 4750, hi: 5060 },
-  { lo: 5900, hi: 6200 },
-  { lo: 7200, hi: 7450 },
-  { lo: 9400, hi: 9900 },
-  { lo: 11600, hi: 12100 },
-  { lo: 13570, hi: 13870 },
-  { lo: 15100, hi: 15800 },
-  { lo: 17480, hi: 17900 },
+  { lo: 4750, hi: 5130 },
+  { lo: 5800, hi: 6400 },
+  { lo: 7200, hi: 7600 },
+  { lo: 9300, hi: 10000 },
+  { lo: 11500, hi: 12200 },
+  { lo: 13550, hi: 13900 },
+  { lo: 15000, hi: 15900 },
+  { lo: 17450, hi: 17950 },
   { lo: 21450, hi: 21850 },
 ];
 
