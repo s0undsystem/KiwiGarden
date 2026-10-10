@@ -457,9 +457,11 @@ func (s *Server) serveWS(conn *kiwiws.Conn) {
 			if sess == nil {
 				continue
 			}
-			if err := sess.Tune(m.Freq, m.Mode); err != nil {
+			if err := sess.Tune(m.Freq, m.Mode); errors.Is(err, relay.ErrInvalidTune) {
 				send(statusMsg{State: "error", Detail: "bad tune request"})
 			}
+			// Any other error: the receiver connection is dying and the
+			// session will deliver its own "closed" status with the reason.
 		case "disconnect":
 			closeSess()
 		case "ping":

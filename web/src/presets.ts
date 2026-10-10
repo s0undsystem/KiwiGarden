@@ -46,14 +46,52 @@ export const PRESETS: Preset[] = [
   { group: "utility", label: "HFGCS military (USB)", freq: 11175, mode: "usb" },
 ];
 
+/** Broadcast bands seek moves through, in kHz. Tropical bands included. */
+export const BANDS: { lo: number; hi: number }[] = [
+  { lo: 2300, hi: 2495 },
+  { lo: 3200, hi: 3400 },
+  { lo: 3900, hi: 4000 },
+  { lo: 4750, hi: 5060 },
+  { lo: 5900, hi: 6200 },
+  { lo: 7200, hi: 7450 },
+  { lo: 9400, hi: 9900 },
+  { lo: 11600, hi: 12100 },
+  { lo: 13570, hi: 13870 },
+  { lo: 15100, hi: 15800 },
+  { lo: 17480, hi: 17900 },
+  { lo: 21450, hi: 21850 },
+];
+
 /**
- * A default that is likely to be audible from a receiver at this longitude
- * right now. Europe gets Channel 292 (24 h music on 6070). The Americas
- * get WWCR (24 h on 4840). Elsewhere, the 31 m band, where something is
- * almost always on.
+ * Where to start listening from a receiver at (lat, lon) right now.
+ *
+ * Shortwave propagation is about whether the sun is up at the receiver: in
+ * daylight the D layer absorbs everything below ~7 MHz and the high bands
+ * (19 m, 16 m) carry the long paths; at night the low bands (49 m, 41 m)
+ * open and the high bands fade. So: daytime starts in the 19 m band;
+ * night starts in the 49 m band, with a station that is known to be on
+ * air around the clock where there is one (Channel 292 for Europe, Radio
+ * Havana Cuba's evening English for the Americas).
  */
-export function defaultFor(lon: number): { freq: number; mode: "am" } {
+export function defaultFor(lat: number, lon: number, now = new Date()): { freq: number; mode: "am" } {
+  if (sunElevation(lat, lon, now) > 0) return { freq: 15100, mode: "am" };
   if (lon >= -30 && lon <= 60) return { freq: 6070, mode: "am" };
-  if (lon < -30) return { freq: 4840, mode: "am" };
-  return { freq: 9400, mode: "am" };
+  if (lon < -30) return { freq: 6000, mode: "am" };
+  return { freq: 5900, mode: "am" };
+}
+
+/** Solar elevation in degrees at a point, from the same algorithm as the terminator. */
+export function sunElevation(lat: number, lon: number, now: Date): number {
+  const rad = Math.PI / 180;
+  const n = now.getTime() / 86400000 + 2440587.5 - 2451545.0;
+  const L = (280.46 + 0.9856474 * n) % 360;
+  const g = (357.528 + 0.9856003 * n) % 360;
+  const lambda = L + 1.915 * Math.sin(g * rad) + 0.02 * Math.sin(2 * g * rad);
+  const eps = 23.439 - 0.0000004 * n;
+  const decl = Math.asin(Math.sin(eps * rad) * Math.sin(lambda * rad));
+  const ra = Math.atan2(Math.cos(eps * rad) * Math.sin(lambda * rad), Math.cos(lambda * rad));
+  const gmst = ((18.697374558 + 24.06570982441908 * n) % 24) * 15 * rad;
+  const ha = gmst + lon * rad - ra; // hour angle
+  const sinEl = Math.sin(lat * rad) * Math.sin(decl) + Math.cos(lat * rad) * Math.cos(decl) * Math.cos(ha);
+  return Math.asin(Math.max(-1, Math.min(1, sinEl))) / rad;
 }

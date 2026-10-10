@@ -309,11 +309,16 @@ func (s *Session) Close() {
 	<-s.done
 }
 
-// Tune changes frequency/mode on the live connection.
+// ErrInvalidTune wraps a frequency/mode the browser was not allowed to ask for.
+var ErrInvalidTune = errors.New("invalid tune request")
+
+// Tune changes frequency/mode on the live connection. A validation failure
+// wraps ErrInvalidTune; any other error means the connection is going away
+// and the session will report its own close reason.
 func (s *Session) Tune(freqKHz float64, mode string) error {
 	freq, mode, err := ValidateTune(freqKHz, mode)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %v", ErrInvalidTune, err)
 	}
 	s.tuneMu.Lock()
 	s.freq, s.mode = freq, mode

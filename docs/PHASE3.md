@@ -39,17 +39,22 @@ arrow keys (Shift for 5 kHz, Alt for 100 Hz), AM/USB/LSB/CW with the Kiwi
 UI's default passbands, and presets for the broadcast bands, a handful of
 long-running stations, time signals, VOLMET and amateur segments.
 
-Seek steps the 5 kHz grid every 650 ms and stops on the first channel whose
-average S-meter reading is 14 dB above a running noise-floor estimate. The
+Seek steps the 5 kHz grid every 650 ms, staying inside the broadcast bands
+(leaving one jumps to the start of the next; the ends wrap), and stops on
+the first channel whose average S-meter reading is 14 dB above a running
+noise-floor estimate. The
 floor tracks downward immediately and upward slowly, so a band full of
 strong signals does not raise the bar out of reach. The frame flagged
 `NEW_FREQ` (the first after a retune) is excluded from the average because
 its AGC state belongs to the previous channel.
 
-The first click on a receiver starts from a longitude-dependent default
-(6070 kHz, Channel 292, in Europe and Africa; 4840 kHz, WWCR, in the
-Americas; the bottom of the 31 m band elsewhere) and, 900 ms after audio
-starts flowing, seeks upward until it finds a signal. Once the user has
+The first click on a receiver computes the sun's elevation at the
+receiver. Daylight starts in the 19 m band (15100 kHz), because the D layer
+kills the low bands by day; night starts in the 49 m band, at a station
+known to be on around the clock where there is one (6070 kHz Channel 292
+for Europe and Africa, 6000 kHz Radio Havana Cuba for the Americas, 5900
+elsewhere). 900 ms after audio starts flowing it seeks upward until it finds
+a signal. Once the user has
 tuned anything, by hand, preset, logbook or seek, clicking another receiver
 keeps that tuning and does not seek.
 

@@ -186,7 +186,9 @@ func TestHostileMatrix(t *testing.T) {
 		{"oversized frame", mockkiwi.OversizedFrame, []Reason{ReasonProtocol}, false},
 		{"lying length", mockkiwi.LyingLength, []Reason{ReasonTimeout}, false},
 		{"slow drip", mockkiwi.SlowDrip, []Reason{ReasonTimeout}, false},
-		{"mid-stream garbage", mockkiwi.MidStreamGarbage, []Reason{ReasonProtocol, ReasonUser}, true},
+		// Garbage can trip the frame parser, a bogus badp code, or a bogus
+		// sample_rate first, depending on the random bytes; all are clean closes.
+		{"mid-stream garbage", mockkiwi.MidStreamGarbage, []Reason{ReasonProtocol, ReasonUser, ReasonRefused, ReasonSampleRate}, true},
 		{"http redirect", mockkiwi.HTTPRedirect, []Reason{ReasonRedirect}, false},
 		{"http 403", mockkiwi.HTTP403, []Reason{ReasonRefused}, false},
 		{"giant metadata", mockkiwi.GiantMetadata, []Reason{ReasonUser}, true},

@@ -2,7 +2,7 @@ import { fetchReceivers } from "./api";
 import { Globe } from "./globe";
 import * as logbook from "./logbook";
 import { Player, sUnits, type StatusEvent } from "./player";
-import { PRESETS, defaultFor } from "./presets";
+import { BANDS, PRESETS, defaultFor } from "./presets";
 import { loadToken } from "./session";
 import { isOpen, type Receiver } from "./types";
 
@@ -276,6 +276,23 @@ async function main(): Promise<void> {
   let seekDir = 0;
   let noiseFloor = -110;
   const recentRssi: number[] = [];
+  /**
+   * Next 5 kHz channel in the seek direction, staying inside the broadcast
+   * bands: leaving a band jumps to the next one, and the ends wrap. A
+   * frequency outside every band (user typed it) first snaps to the nearest
+   * band edge in the direction of travel.
+   */
+  function nextChannel(f: number, dir: number): number {
+    const cand = Math.round(f / SEEK_STEP) * SEEK_STEP + dir * SEEK_STEP;
+    const inBand = BANDS.find((b) => cand >= b.lo && cand <= b.hi);
+    if (inBand) return cand;
+    if (dir > 0) {
+      const nextBand = BANDS.find((b) => b.lo > cand) ?? BANDS[0]!;
+      return nextBand.lo;
+    }
+    const prevBand = [...BANDS].reverse().find((b) => b.hi < cand) ?? BANDS[BANDS.length - 1]!;
+    return prevBand.hi;
+  }
   function stopSeek(): void {
     if (seekTimer !== null) clearTimeout(seekTimer);
     seekTimer = null;
@@ -303,11 +320,8 @@ async function main(): Promise<void> {
           return;
         }
       }
-      // Advance to the next channel on the 5 kHz grid.
-      let next = Math.round(freq / SEEK_STEP) * SEEK_STEP + seekDir * SEEK_STEP;
-      if (next > 30000) next = 0;
-      if (next < 0) next = 30000;
       recentRssi.length = 0;
+      const next = nextChannel(freq, seekDir);
       applyTune(next, mode, true);
       seekTimer = window.setTimeout(step, SEEK_DWELL_MS);
     };
@@ -326,7 +340,7 @@ async function main(): Promise<void> {
     if (!tunedByUser) {
       // No tuning chosen yet: start from the regional default and, once
       // audio is flowing, seek upward until something real is on.
-      const d = defaultFor(r.lon);
+      const d = defaultFor(r.lat, r.lon);
       freq = d.freq;
       mode = d.mode;
       autoSeek = true;
@@ -371,10 +385,12 @@ async function main(): Promise<void> {
         }
         break;
       case "closed":
+        stopSeek();
         setStatus(reasonText(ev), ev.reason === "closed_by_user" ? "" : "err");
         smeterBar.style.width = "0";
         break;
       case "error":
+        stopSeek();
         setStatus(ev.detail ?? "error", "err");
         break;
     }
