@@ -27,7 +27,7 @@ import (
 // CSP for the HTML page. Phase 2 UI must work under this exactly.
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; " +
 	"connect-src 'self'; worker-src 'self'; media-src 'self'; base-uri 'none'; form-action 'none'; " +
-	"frame-ancestors 'none'; object-src 'none'; require-trusted-types-for 'script'"
+	"frame-ancestors 'none'; object-src 'none'; require-trusted-types-for 'script'; trusted-types kg"
 
 // TokenHeader carries the session token on API requests.
 const TokenHeader = "X-Kiwi-Token"
@@ -72,6 +72,17 @@ func New(dir *directory.Store, rm *relay.Manager, ui fs.FS) (*Server, error) {
 // Token returns the hex session token, for printing the launch URL once.
 // Callers must not log it anywhere else.
 func (s *Server) Token() string { return s.tokHex }
+
+// UseToken replaces the random token. Only the -dev flag uses this, to keep
+// the token stable across restarts while working on the UI. Must be 32 bytes.
+func (s *Server) UseToken(raw []byte) error {
+	if len(raw) != 32 {
+		return errors.New("token must be 32 bytes")
+	}
+	s.token = append([]byte(nil), raw...)
+	s.tokHex = hex.EncodeToString(s.token)
+	return nil
+}
 
 // Listen binds 127.0.0.1:port (0 = ephemeral) and returns the listener.
 func (s *Server) Listen(port int) (net.Listener, error) {

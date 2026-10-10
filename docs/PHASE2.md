@@ -74,7 +74,7 @@ directly on three.js is ~400 lines and keeps the dependency list to one.
 - **Token in the address bar**: stripped by `history.replaceState` on first
   load; a refresh keeps working through `sessionStorage`; a second tab needs
   the printed URL again (deliberate).
-- **Foreign page calling the API**: blocked by CSP on our side only for our
+- **Foreign page calling the API**: blocked by CSP only for this
   page; the relay's Origin and token checks are what stop it. Tested in
   Phase 1.
 - **Oversized or malformed coastline file** (if the embedded asset were ever

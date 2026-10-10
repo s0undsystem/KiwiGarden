@@ -9,13 +9,11 @@ decodes the receiver's ADPCM audio stream into PCM, and hands that to a page
 it serves on `127.0.0.1`. The page draws the receivers on a globe with a live
 day/night terminator. The browser talks to the relay and nothing else.
 
-![865 receivers at 02:31 UTC; Europe on the night side](docs/globe-phase2.png)
+![865 receivers at 02:31 UTC; Europe on the night side](docs/globe.png)
 
-The rest of this document is about how it works and why it is built the way it
-is. Status: Phases 0 to 2 are done (protocol, relay and security core, globe).
-Phase 3 is the in-page player; Phase 4 is a logbook. Each phase has a report
-in `docs/` and ends with an adversarial review against
-[THREAT_MODEL.md](THREAT_MODEL.md).
+Security design and the adversarial reviews live in
+[THREAT_MODEL.md](THREAT_MODEL.md); the working notes from reverse-engineering
+the protocol and building each layer are in `docs/`.
 
 ## 1. What a KiwiSDR actually sends you
 
@@ -31,7 +29,8 @@ maintains and that most third-party tools are built on.
 header, so this project ports none of it. The protocol below was learned by
 reading it and the server source (`rx/rx_sound.cpp`, `rx/rx_cmd.cpp`,
 `rx/rx_server.cpp` in `jks-prv/KiwiSDR`), then re-implemented and verified
-against live receivers. The full notes are in [docs/PHASE0.md](docs/PHASE0.md).
+against live receivers. The full notes are in [docs/PHASE0.md](docs/PHASE0.md),
+including what each receiver said when it refused us.
 
 ### The handshake
 
@@ -57,7 +56,7 @@ SET auth t=kiwi p=
 `client_public_ip`, `rx_chans=8`, `chan_no_pwd`, `badp=0` (which means
 *success*; `badp=1` through `7` are the rejection codes), firmware version,
 `freq_offset`, a few kilobytes of URL-encoded JSON config in `load_cfg` that
-we never parse, and `audio_rate=12000`, the nominal rate. The client
+the relay never parses, and `audio_rate=12000`, the nominal rate. The client
 acknowledges that with `SET AR OK in=12000 out=44100` and configures the
 channel:
 
@@ -117,7 +116,7 @@ a fraction of the current step, and the nibble also moves an index into an
 89-entry step table. The decoder has two words of state, the index and the
 predicted sample, and they persist across frames. If a frame is lost, the
 decoder drifts until the next reset. If a frame is *hostile*, a naive decoder
-indexes out of the table. Ours clamps the index to `[0, 88]` and the
+indexes out of the table. Mine clamps the index to `[0, 88]` and the
 predictor to `int16` on every sample (`internal/kiwi/adpcm.go`), and a fuzz
 target feeds it random bytes and random preset state.
 
@@ -214,7 +213,7 @@ unreachable through the production dialer by IP and by name.
 The same dialer is used for the directory fetch, with the extra rule that
 the only hostname it may dial is `cdn.aethersdr.com`.
 
-### The WebSocket code is ours
+### The WebSocket code is written here, not imported
 
 There is no WebSocket in the Go standard library, and the popular libraries
 are fine, but this is the one place where every length field comes from a
@@ -248,7 +247,7 @@ with 23 behaviours: a frame that declares 16 MiB, a frame that declares 4000
 bytes and sends 100, one byte every two seconds, random bytes with an `SND`
 tag mid-stream, an HTTP 307, a 200 KiB metadata value, silence after the
 handshake, every busy code, a 48 kHz sample rate, a flood, masked frames,
-RSV bits, reserved opcodes, a stereo frame we never asked for, odd-length
+RSV bits, reserved opcodes, a stereo frame that was never requested, odd-length
 PCM, and a sequence number that jumps to 2^32. Each has to end in a clean
 close with a machine-readable reason, and a separate test runs rounds of
 them concurrently and checks that the goroutine count returns to baseline.
@@ -288,38 +287,37 @@ a second, unknown JSON fields rejected, frequencies clamped to 0 to 30000
 kHz, modes to `am`, `usb`, `lsb`, `cw`. The browser cannot name a host; it
 names an ID that must exist in the current validated list.
 
-## 4. The globe
+## 4. The page
 
-The front end is TypeScript on three.js, no framework, built by Vite into a
-single hashed script and embedded in the Go binary with `go:embed`. It runs
-under a Content Security Policy of `default-src 'self'; script-src 'self';
+The front end is TypeScript on three.js, built by Vite into one hashed
+script and embedded in the Go binary with `go:embed`. What matters about it
+is what it cannot do. It runs under `default-src 'self'; script-src 'self';
 connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src
-'none'; require-trusted-types-for 'script'`, which means: no inline script,
-no `eval`, no `innerHTML`, no request to any host but the relay. A test
-scans the built bundle for URLs and DOM sinks; the only URL-shaped strings
-in 550 KB of three.js are the XHTML namespace and a citation comment.
+'none'; require-trusted-types-for 'script'; trusted-types kg`: no inline
+script, no `eval`, no `innerHTML`, no request to any host but the relay,
+and exactly one Trusted Types policy, which accepts exactly one script URL
+(the audio worklet). A test scans the built bundle for URLs and DOM sinks;
+the only URL-shaped strings in 550 KB of three.js are the XHTML namespace
+and a citation comment. Every string from the relay reaches the DOM through
+`textContent`. The page does not know a receiver's URL and has no way to
+link to, embed or open one.
 
-The globe itself is a sphere with a fragment shader that mixes a night colour
-and a day colour by `smoothstep` of the dot product between the surface
-normal and the sun direction, plus a Fresnel term for the limb and an
-additive back-face shell for the atmosphere. The sun direction is the
-sub-solar point computed from UTC with the NOAA low-precision solar
-position algorithm (mean longitude, mean anomaly, ecliptic longitude,
-obliquity, then right ascension and Greenwich sidereal time), recomputed
-every 30 seconds; it is accurate to a fraction of a degree, far below the
-terminator's visual softness. Coastlines are Natural Earth 50m (public
-domain), 60 416 points, packed into a 489 KB binary of float32 lon/lat
-pairs with a magic header and per-segment counts, parsed with bounds checks
-and rendered as one `LineSegments` draw call at radius 1.002. Receivers are
-one `Points` draw call with per-vertex size and colour and a radial glow in
-the fragment shader; green and sized by the receiver's reported SNR when it
-has a free slot and allows apps, small and grey otherwise. Picking projects
-all 870 points to screen space on each pointer move and takes the nearest
-within 14 px on the camera-facing hemisphere, which is cheaper and more
-predictable than ray-casting against a point cloud.
+Audio playback is an `AudioWorkletProcessor` (`web/public/player-worklet.js`)
+fed int16 PCM at the receiver's calibrated rate. It keeps a four-second ring
+buffer, starts after 250 ms is buffered, and then chases a 300 ms target by
+nudging the resampling ratio by at most one percent, which absorbs the
+receiver's clock offset and network jitter without ever skipping. Underruns
+and receiver switches ramp the gain over 5 ms instead of muting, so a stall
+is a dip and a retune is the receiver's own filter transient, which is the
+honest sound of tuning a radio. A peak limiter (1 ms attack, 250 ms release,
+ceiling at -1 dBFS) and a hard clamp sit at the end of the chain so that a
+receiver with its AGC off cannot hand you full-scale square waves. The
+S-meter in the UI is the S-meter field from each audio frame, nothing more.
 
-Every string from the relay reaches the DOM through `textContent`. The page
-does not know a receiver's URL and has no way to link to, embed or open one.
+The logbook lives in `localStorage` and is treated as hostile when read
+back: every field is type-checked and capped, the receiver is referenced by
+ID and re-resolved against the current list, and export is a `blob:`
+download that needs no CSP exception.
 
 ## 5. Being a reasonable guest
 
@@ -351,7 +349,7 @@ drags in d3 and fetches textures from a CDN by default.
 
 ```
 cmd/kiwi-garden     entry point
-cmd/kiwispike       Phase 0 CLI: one receiver, one frequency, N seconds to a WAV
+cmd/kiwispike       debugging CLI: one receiver, one frequency, N seconds to a WAV
 internal/netpolicy  address policy and the Control-hook dialer
 internal/directory  list fetch, validation, cache
 internal/kiwiws     RFC 6455 client and server

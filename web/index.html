@@ -6,6 +6,7 @@
     <meta name="referrer" content="no-referrer" />
     <meta name="color-scheme" content="dark" />
     <title>Kiwi Garden</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
@@ -16,7 +17,10 @@
         <span id="title">Kiwi Garden</span>
         <span id="counts" aria-live="polite"></span>
       </div>
-      <time id="clock" datetime=""></time>
+      <div id="top-right">
+        <button id="logbook-toggle" type="button">Logbook</button>
+        <time id="clock" datetime=""></time>
+      </div>
     </header>
 
     <div id="tooltip" role="tooltip" hidden>
@@ -35,8 +39,72 @@
         <dt>Firmware</dt><dd id="rx-version"></dd>
       </dl>
       <p id="rx-note"></p>
-      <button id="listen" type="button" disabled title="The player arrives in Phase 3">Listen</button>
+      <button id="listen" type="button">Listen</button>
     </aside>
+
+    <section id="player" hidden aria-live="polite">
+      <div class="p-row p-head">
+        <div class="p-rx">
+          <span id="p-name"></span>
+          <span id="p-loc"></span>
+        </div>
+        <span id="p-status"></span>
+      </div>
+      <div class="p-row p-tune">
+        <button type="button" class="seek" data-seek="-1" title="Seek down: step 5 kHz until a signal">◀◀</button>
+        <button type="button" class="step" data-step="-5" title="−5 kHz">−5</button>
+        <button type="button" class="step" data-step="-1" title="−1 kHz">−1</button>
+        <label class="p-freq"><input id="p-freq" type="number" inputmode="decimal" step="0.1" min="0" max="30000" /> <span>kHz</span></label>
+        <button type="button" class="step" data-step="1" title="+1 kHz">+1</button>
+        <button type="button" class="step" data-step="5" title="+5 kHz">+5</button>
+        <button type="button" class="seek" data-seek="1" title="Seek up: step 5 kHz until a signal">▶▶</button>
+        <div class="p-modes" role="group" aria-label="Mode">
+          <button type="button" data-mode="am">AM</button>
+          <button type="button" data-mode="usb">USB</button>
+          <button type="button" data-mode="lsb">LSB</button>
+          <button type="button" data-mode="cw">CW</button>
+        </div>
+      </div>
+      <div class="p-row p-presets">
+        <label>Go to <select id="p-preset"><option value="">band or station…</option></select></label>
+      </div>
+      <div class="p-row p-meter">
+        <div class="meter"><div id="smeter-bar"></div></div>
+        <span id="smeter-text">—</span>
+        <label class="p-vol"><span>vol</span><input id="p-vol" type="range" min="0" max="100" value="80" /></label>
+      </div>
+      <div class="p-row p-actions">
+        <input id="p-note" type="text" maxlength="500" placeholder="note (optional)" />
+        <button id="p-log" type="button">Log catch</button>
+        <button id="p-stop" type="button">Stop</button>
+      </div>
+    </section>
+
+    <aside id="logbook" hidden>
+      <div class="lb-head">
+        <h2>Logbook</h2>
+        <div class="lb-actions">
+          <button id="lb-export-json" type="button">JSON</button>
+          <button id="lb-export-csv" type="button">CSV</button>
+          <button id="lb-close" type="button" aria-label="Close">×</button>
+        </div>
+      </div>
+      <p id="lb-empty">No catches yet. Tune something and press Log catch.</p>
+      <ul id="lb-list"></ul>
+    </aside>
+
+    <template id="lb-entry">
+      <li class="lb-entry">
+        <button type="button" class="lb-retune">
+          <span class="lb-freq"></span>
+          <span class="lb-mode"></span>
+          <span class="lb-time"></span>
+          <span class="lb-rx"></span>
+        </button>
+        <span class="lb-note"></span>
+        <button type="button" class="lb-delete" aria-label="Delete">×</button>
+      </li>
+    </template>
 
     <div id="overlay" hidden>
       <div id="overlay-box">

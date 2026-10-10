@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -25,6 +27,7 @@ func main() {
 		cache   = flag.String("cache", "", "directory cache file (default: user cache dir)")
 		noCache = flag.Bool("no-cache", false, "do not read or write the directory cache")
 		verbose = flag.Bool("v", false, "debug logging")
+		dev     = flag.Bool("dev", false, "developer mode: reuse a session token stored in the cache dir so the browser tab survives restarts")
 	)
 	flag.Parse()
 
@@ -69,6 +72,13 @@ func main() {
 		slog.Error("server init", "err", err)
 		os.Exit(1)
 	}
+	if *dev {
+		if err := useDevToken(srv); err != nil {
+			slog.Error("dev token", "err", err)
+			os.Exit(1)
+		}
+		slog.Warn("developer mode: session token is persisted on disk and reused across restarts")
+	}
 	ln, err := srv.Listen(*port)
 	if err != nil {
 		slog.Error("listen", "err", err)
@@ -94,4 +104,31 @@ func main() {
 	sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer scancel()
 	hs.Shutdown(sctx)
+}
+
+// useDevToken loads or creates <cache dir>/kiwi-garden/dev-token (0600) and
+// installs it. A same-user process can read it; that is the documented
+// trade-off of -dev (THREAT_MODEL.md 4.3).
+func useDevToken(srv *server.Server) error {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(base, "kiwi-garden")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	p := filepath.Join(dir, "dev-token")
+	raw, err := os.ReadFile(p)
+	if err == nil && len(raw) == 32 {
+		return srv.UseToken(raw)
+	}
+	raw = make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return err
+	}
+	if err := os.WriteFile(p, raw, 0o600); err != nil {
+		return err
+	}
+	return srv.UseToken(raw)
 }

@@ -83,9 +83,36 @@ const pointFrag = /* glsl */ `
     vec2 p = gl_PointCoord - 0.5;
     float r = length(p) * 2.0;
     if (r > 1.0) discard;
-    float core = smoothstep(0.45, 0.0, r);
-    float halo = pow(1.0 - r, 2.2) * 0.55;
-    gl_FragColor = vec4(vColor * (core + halo), core + halo);
+    // crisp core with an anti-aliased edge, faint halo
+    float core = 1.0 - smoothstep(0.38, 0.5, r);
+    float halo = (1.0 - smoothstep(0.5, 1.0, r)) * 0.22;
+    float a = core + halo;
+    gl_FragColor = vec4(vColor * a, a);
+  }
+`;
+
+const ringVert = /* glsl */ `
+  uniform float uScale;
+  uniform float uSize;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = uSize * uScale / -mv.z;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const ringFrag = /* glsl */ `
+  uniform float uPhase;
+  void main() {
+    vec2 p = gl_PointCoord - 0.5;
+    float r = length(p) * 2.0;
+    // two rings: a steady inner ring and an expanding pulse
+    float inner = 1.0 - smoothstep(0.03, 0.06, abs(r - 0.42));
+    float pr = 0.5 + 0.5 * uPhase;
+    float pulse = (1.0 - smoothstep(0.02, 0.05, abs(r - pr))) * (1.0 - uPhase);
+    float a = inner * 0.9 + pulse * 0.6;
+    if (a < 0.01) discard;
+    gl_FragColor = vec4(1.0, 1.0, 1.0, a);
   }
 `;
 
@@ -103,6 +130,8 @@ export class Globe {
 
   private readonly sunUniform = { value: new Vector3(1, 0, 0) };
   private readonly pointScale = { value: 1 };
+  private readonly ringPhase = { value: 0 };
+  private readonly ring: Points;
   private points: Points | null = null;
   private receivers: Receiver[] = [];
   private positions = new Float32Array(0);
@@ -113,8 +142,26 @@ export class Globe {
   private readonly camDir = new Vector3();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "low-power" });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
     this.renderer.setClearColor(new Color(0x04060c), 1);
+
+    // Selection marker: a single point drawn as a ring, hidden until used.
+    const ringGeom = new BufferGeometry();
+    ringGeom.setAttribute("position", new Float32BufferAttribute(new Float32Array(3), 3));
+    this.ring = new Points(
+      ringGeom,
+      new ShaderMaterial({
+        vertexShader: ringVert,
+        fragmentShader: ringFrag,
+        uniforms: { uScale: this.pointScale, uSize: { value: 34 }, uPhase: this.ringPhase },
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+      }),
+    );
+    this.ring.visible = false;
+    this.ring.renderOrder = 2;
+    this.scene.add(this.ring);
     this.camera = new PerspectiveCamera(40, 1, 0.1, 100);
     this.camera.position.set(0, 0.6, 3.2);
 
@@ -172,7 +219,8 @@ export class Globe {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.pointScale.value = (h * this.renderer.getPixelRatio()) / 240;
+    // gl_PointSize is in device pixels; keep sizes constant in CSS pixels.
+    this.pointScale.value = (h * this.renderer.getPixelRatio()) / 420;
   }
 
   /** Recompute the terminator at most every 30 s. */
@@ -196,12 +244,13 @@ export class Globe {
       this.positions[i * 3] = v.x;
       this.positions[i * 3 + 1] = v.y;
       this.positions[i * 3 + 2] = v.z;
-      this.styleFor(r, i, sizes, colors);
+      this.styleFor(r, i === this.selectedIndex, i === this.hoverIndex, i, sizes, colors);
     }
     if (this.points) {
       this.scene.remove(this.points);
       this.points.geometry.dispose();
     }
+    this.placeRing(this.selectedIndex);
     const geom = new BufferGeometry();
     geom.setAttribute("position", new Float32BufferAttribute(this.positions, 3));
     geom.setAttribute("aSize", new Float32BufferAttribute(sizes, 1));
@@ -221,21 +270,20 @@ export class Globe {
     this.scene.add(this.points);
   }
 
-  private styleFor(r: Receiver, i: number, sizes: Float32Array, colors: Float32Array): void {
+  /** Writes size and colour for receiver r into slot `at` of the arrays. */
+  private styleFor(r: Receiver, selected: boolean, hovered: boolean, at: number, sizes: Float32Array, colors: Float32Array): void {
     const open = isOpen(r);
-    const selected = i === this.selectedIndex;
-    const hovered = i === this.hoverIndex;
-    let size = open ? 7 + Math.min(Math.max(r.snr, 0), 40) / 8 : 4;
-    if (selected) size *= 2.2;
-    else if (hovered) size *= 1.6;
-    sizes[i] = size;
+    let size = open ? 5.5 + Math.min(Math.max(r.snr, 0), 40) / 10 : 3.5;
+    if (selected) size *= 1.7;
+    else if (hovered) size *= 1.45;
+    sizes[at] = size;
     let c: Color;
     if (selected) c = new Color(0xffffff);
-    else if (open) c = hovered ? new Color(0xb9ffd9) : new Color(0x6ee7a8);
-    else c = new Color(0x3b4454);
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
+    else if (open) c = hovered ? new Color(0xd6fff0) : new Color(0x6ee7a8);
+    else c = hovered ? new Color(0x8a94a6) : new Color(0x3b4454);
+    colors[at * 3] = c.r;
+    colors[at * 3 + 1] = c.g;
+    colors[at * 3 + 2] = c.b;
   }
 
   private restyle(indices: number[]): void {
@@ -246,12 +294,23 @@ export class Globe {
     const col = new Float32Array(3);
     for (const i of indices) {
       if (i < 0 || i >= this.receivers.length) continue;
-      this.styleFor(this.receivers[i]!, 0, sz, col);
+      this.styleFor(this.receivers[i]!, i === this.selectedIndex, i === this.hoverIndex, 0, sz, col);
       sizes.setX(i, sz[0]!);
       colors.setXYZ(i, col[0]!, col[1]!, col[2]!);
     }
     sizes.needsUpdate = true;
     colors.needsUpdate = true;
+  }
+
+  private placeRing(index: number): void {
+    if (index < 0 || index >= this.receivers.length) {
+      this.ring.visible = false;
+      return;
+    }
+    const pos = this.ring.geometry.getAttribute("position") as Float32BufferAttribute;
+    pos.setXYZ(0, this.positions[index * 3]!, this.positions[index * 3 + 1]!, this.positions[index * 3 + 2]!);
+    pos.needsUpdate = true;
+    this.ring.visible = true;
   }
 
   setHover(index: number): void {
@@ -266,6 +325,7 @@ export class Globe {
     const prev = this.selectedIndex;
     this.selectedIndex = index;
     this.restyle([prev, index]);
+    this.placeRing(index);
   }
 
   /**
@@ -309,6 +369,7 @@ export class Globe {
   start(): void {
     const tick = (): void => {
       this.updateSun();
+      this.ringPhase.value = (performance.now() % 1600) / 1600;
       if (this.flyTarget) {
         this.camera.position.lerp(this.flyTarget, 0.08);
         if (this.camera.position.distanceTo(this.flyTarget) < 0.01) this.flyTarget = null;

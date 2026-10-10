@@ -46,6 +46,6 @@ export async function loadCoastlines(radius: number): Promise<LineSegments> {
   }
   const geom = new BufferGeometry();
   geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  const mat = new LineBasicMaterial({ color: 0x3f5f8f, transparent: true, opacity: 0.75 });
+  const mat = new LineBasicMaterial({ color: 0x4f74aa, transparent: true, opacity: 0.85 });
   return new LineSegments(geom, mat);
 }

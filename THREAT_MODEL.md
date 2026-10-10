@@ -133,6 +133,19 @@ test asserts the default is false.
 | Receiver web UIs are never embedded, iframed, linked as `<a href>`, or opened. The receiver's `url` is **not sent to the browser at all**; the browser only gets an ID, name, location, antenna, GPS, counts and flags. | `internal/server` |
 | Trusted Types: no `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`, `eval`, `new Function`, `setTimeout(string)`. Enforced by CSP in the browser and a grep test over `web/src`. | `web/src`, tests |
 
+### 4.6a Player and logbook
+
+| Control | Where |
+| --- | --- |
+| The audio worklet is the only script loaded by URL. The page's single Trusted Types policy (`kg`, named in the CSP `trusted-types` directive) accepts exactly `/player-worklet.js` and throws for anything else. | `web/src/player.ts` |
+| Audio frames from the relay are re-validated in the browser: type byte, minimum and maximum length (128 KiB), even PCM length. The worklet drops `pcm` messages over 65 536 samples and never grows its ring buffer. | `web/src/player.ts`, `web/public/player-worklet.js` |
+| Output limiter: peak follower with a -1 dBFS ceiling plus a hard clamp at 0.98, applied after the volume control, so no receiver can produce full-scale output whatever it sends. | `web/public/player-worklet.js` |
+| Seek reads only the S-meter from frames and issues tune commands at most every 650 ms, well under the relay's 20 messages/s cap. | `web/src/main.ts` |
+| Logbook entries are untrusted on read: every field type-checked, `freq` range-checked, `mode` allow-listed, receiver ID pattern-checked, strings capped by rune count, at most 2000 entries, 4 MB raw cap. Rendered by cloning a `<template>` and setting `textContent`. Receivers are referenced by ID and re-resolved against the live list; a vanished receiver cannot be dialled. | `web/src/logbook.ts`, `web/src/main.ts` |
+| Export is a `blob:` URL on an `<a download>`; no CSP exception, no navigation. CSV fields are quoted. (Spreadsheet formula injection is the importing application's problem, but a note starting with `=` is still exported as-is inside quotes; see residual.) | `web/src/logbook.ts` |
+| `kg:play` / `kg:stop` DOM events let same-origin scripts drive the player. Same-origin scripts can already do anything the page can, so this adds no capability; the handler still validates the receiver ID against the list and clamps the frequency. | `web/src/main.ts` |
+| `-dev` flag: the session token is stored at `<cache dir>/kiwi-garden/dev-token` (0600) and reused across restarts. Any same-user process can read it. Off by default, printed as a warning when on, intended only while working on the UI. | `cmd/kiwi-garden/main.go` |
+
 ### 4.7 Good citizen
 
 | Control | Where |
@@ -231,3 +244,31 @@ Held: all of the above. Nothing needed fixing in the security controls.
 Residual added: three.js is a 550 KB dependency; pinned, bundled, no
 network, no inline script allowed. A WebGL-less browser gets a blank globe
 and no message yet (UX, not security).
+
+### Phase 3 and 4 review (player, logbook)
+
+Tried:
+- Live session driven over the Chrome DevTools Protocol under the
+  production CSP: worklet loaded through the Trusted Types policy, audio
+  frames decoded and buffered (0.25 to 0.3 s steady state, ratio chase
+  holding), retune and mode change mid-stream, seek, log a catch, read it
+  back, stop. Zero CSP reports, zero exceptions.
+- Audio frame with a wrong type byte, odd length, or over 128 KiB: dropped
+  in the browser before reaching the worklet.
+- Worklet fed a `pcm` message of 1 MB: dropped (65 536-sample cap). Fed
+  frames faster than real time: ring buffer drops oldest, never grows.
+- Full-scale square wave from the mock receiver: output held at -1 dBFS by
+  the limiter.
+- Logbook with hand-edited `localStorage`: entries with a `javascript:`
+  receiver name, a 100 kB note, `freq: 1e9`, `mode: "iq"`, a non-hex
+  receiver ID, and a non-array root: all dropped or capped, nothing rendered
+  as markup, nothing dialled.
+- Retune from a logbook entry whose receiver has left the list: status
+  message, no connection attempt.
+
+Held: all of the above.
+
+Residual added: a CSV note beginning with `=`, `+`, `-` or `@` is exported
+inside quotes and could be interpreted as a formula by a spreadsheet that
+ignores quoting. Mitigated by prefixing such notes with a single quote in
+the CSV export.
