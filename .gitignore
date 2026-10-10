@@ -1,0 +1,6 @@
+*.wav
+/kiwispike
+/kiwi-garden
+web/node_modules/
+internal/ui/dist/*
+!internal/ui/dist/.keep

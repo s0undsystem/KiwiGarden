@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="dark" />
+    <title>Kiwi Garden</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <canvas id="globe" aria-label="Globe of KiwiSDR receivers"></canvas>
+
+    <header id="top">
+      <div id="brand">
+        <span id="title">Kiwi Garden</span>
+        <span id="counts" aria-live="polite"></span>
+      </div>
+      <time id="clock" datetime=""></time>
+    </header>
+
+    <div id="tooltip" role="tooltip" hidden>
+      <div class="tt-name"></div>
+      <div class="tt-loc"></div>
+    </div>
+
+    <aside id="panel" hidden aria-live="polite">
+      <button id="panel-close" type="button" aria-label="Close">×</button>
+      <h2 id="rx-name"></h2>
+      <p id="rx-loc"></p>
+      <dl>
+        <dt>Antenna</dt><dd id="rx-antenna"></dd>
+        <dt>Slots</dt><dd id="rx-slots"></dd>
+        <dt>SNR</dt><dd id="rx-snr"></dd>
+        <dt>Firmware</dt><dd id="rx-version"></dd>
+      </dl>
+      <p id="rx-note"></p>
+      <button id="listen" type="button" disabled title="The player arrives in Phase 3">Listen</button>
+    </aside>
+
+    <div id="overlay" hidden>
+      <div id="overlay-box">
+        <h1>Kiwi Garden</h1>
+        <p id="overlay-msg"></p>
+      </div>
+    </div>
+
+    <footer id="legend">
+      <span><i class="dot open"></i>open</span>
+      <span><i class="dot busy"></i>full or no app access</span>
+      <span id="dir-age"></span>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
