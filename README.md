@@ -1,4 +1,4 @@
-# Kiwi Garden
+and the no# Kiwi Garden
 
 Kiwi Garden is a local program that lets you listen to live shortwave through
 any of the ~870 public [KiwiSDR](https://kiwisdr.com) receivers in the world,

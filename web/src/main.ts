@@ -255,13 +255,16 @@ async function main(): Promise<void> {
     pStatus.className = cls;
   }
   function renderTune(): void {
-    pFreq.value = freq.toFixed(freq % 1 === 0 ? 0 : 3).replace(/\.?0+$/, "");
+    // Integers as-is; otherwise up to 3 decimals with trailing zeros trimmed.
+    pFreq.value = Number.isInteger(freq) ? String(freq) : freq.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
     for (const b of modeButtons) b.classList.toggle("on", b.dataset.mode === mode);
   }
   function applyTune(f: number, m: string, fromSeek = false): void {
     if (!Number.isFinite(f)) return;
-    if (!fromSeek) stopSeek();
-    tunedByUser = true;
+    if (!fromSeek) {
+      stopSeek();
+      tunedByUser = true;
+    }
     freq = Math.min(30000, Math.max(0, Math.round(f * 1000) / 1000));
     mode = m;
     renderTune();
@@ -286,6 +289,7 @@ async function main(): Promise<void> {
     }
     stopSeek();
     seekDir = dir;
+    tunedByUser = true; // wherever seek lands is now the user's tuning
     for (const b of seekButtons) b.classList.toggle("on", Number(b.dataset.seek) === dir);
     const start = freq;
     const step = (): void => {
@@ -316,12 +320,16 @@ async function main(): Promise<void> {
     pPreset.value = "";
     if (p) applyTune(p.freq, p.mode);
   });
+  let autoSeek = false;
   async function play(r: Receiver): Promise<void> {
     stopSeek();
     if (!tunedByUser) {
+      // No tuning chosen yet: start from the regional default and, once
+      // audio is flowing, seek upward until something real is on.
       const d = defaultFor(r.lon);
       freq = d.freq;
       mode = d.mode;
+      autoSeek = true;
     }
     playingRx = r;
     pName.textContent = r.name;
@@ -343,7 +351,8 @@ async function main(): Promise<void> {
     if (player.state !== "playing") return;
     const buf = `${s.buffered.toFixed(2)} s buffered`;
     const under = s.underruns ? ` · ${s.underruns} underruns` : "";
-    setStatus(`${liveLabel} · ${buf}${under}`, "live");
+    const seeking = seekDir !== 0 ? " · seeking" : "";
+    setStatus(`${liveLabel} · ${buf}${under}${seeking}`, "live");
   });
   player.on("status", (ev) => {
     switch (ev.state) {
@@ -353,6 +362,13 @@ async function main(): Promise<void> {
       case "connected":
         liveLabel = `live · ${ev.sampleRate ? Math.round(ev.sampleRate) : ""} Hz${ev.version ? ` · v${ev.version}` : ""}`;
         setStatus(liveLabel, "live");
+        if (autoSeek) {
+          autoSeek = false;
+          // Give the AGC a moment on the default channel, then hunt.
+          window.setTimeout(() => {
+            if (player.state === "playing" && !tunedByUser) seek(1);
+          }, 900);
+        }
         break;
       case "closed":
         setStatus(reasonText(ev), ev.reason === "closed_by_user" ? "" : "err");

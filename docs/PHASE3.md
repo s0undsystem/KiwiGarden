@@ -46,10 +46,19 @@ strong signals does not raise the bar out of reach. The frame flagged
 `NEW_FREQ` (the first after a retune) is excluded from the average because
 its AGC state belongs to the previous channel.
 
-The default frequency when a receiver is first clicked depends on its
-longitude: 6070 kHz (Channel 292, 24 h music) in Europe and Africa, 4840
-kHz (WWCR, 24 h) in the Americas, the top of the 31 m band elsewhere. Once
-the user has tuned anything, clicking another receiver keeps that tuning.
+The first click on a receiver starts from a longitude-dependent default
+(6070 kHz, Channel 292, in Europe and Africa; 4840 kHz, WWCR, in the
+Americas; the bottom of the 31 m band elsewhere) and, 900 ms after audio
+starts flowing, seeks upward until it finds a signal. Once the user has
+tuned anything, by hand, preset, logbook or seek, clicking another receiver
+keeps that tuning and does not seek.
+
+Known limitation: a few receivers listed as `<name>.proxy.kiwisdr.com`
+answer the upgrade with a 307 to `<name>.proxy2.kiwisdr.com`. The relay
+never follows redirects, so those show "receiver tried to redirect us".
+The second proxy host is not in the directory, so there is nothing to
+validate it against; this stays refused until the mirror lists the real
+host.
 
 ## Logbook
 
