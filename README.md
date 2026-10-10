@@ -314,6 +314,35 @@ ceiling at -1 dBFS) and a hard clamp sit at the end of the chain so that a
 receiver with its AGC off cannot hand you full-scale square waves. The
 S-meter in the UI is the S-meter field from each audio frame, nothing more.
 
+### Finding something to listen to
+
+Thirty megahertz of dial is mostly noise. Broadcasters sit in a dozen
+bands (49 m around 6 MHz, 31 m around 9.5, 25 m around 11.7, 19 m around
+15.1, and the tropical bands below 5 MHz) on a 5 kHz grid, and which bands
+carry anything depends on whether the sun is up at the receiver: by day the
+ionosphere's D layer absorbs everything below about 7 MHz and the long
+paths run on 19 m and 16 m; at night the low bands open and the high bands
+die. So the first click on a receiver computes the solar elevation at its
+coordinates with the same algorithm that draws the terminator, starts in
+the 19 m band if it is daylight there and the 49 m band if not (on a
+transmitter known to be on around the clock where there is one, Channel
+292's 6070 kHz for Europe, Radio Havana Cuba's 6000 kHz for the Americas),
+and then seeks.
+
+Seek steps the 5 kHz grid, dwells 650 ms on each channel, averages the
+S-meter readings that arrive in that window (skipping the first frame after
+a retune, whose AGC state belongs to the previous channel), and stops when
+the average is 14 dB above a running noise-floor estimate. The floor tracks
+downward immediately and upward slowly, so a band full of strong stations
+does not raise the bar out of reach. When a step would leave a band it jumps
+to the start of the next one, and the ends wrap, so seek never spends
+minutes in the dead space between bands. There are also presets for the
+bands, a few long-running stations, the time-signal channels, VOLMET
+aviation weather and the amateur segments; AM for broadcasters, USB and
+LSB for voice above and below 10 MHz, CW for Morse. Once you have tuned
+anything, clicking another receiver keeps that frequency, which is the
+point: the same station heard from three continents.
+
 The logbook lives in `localStorage` and is treated as hostile when read
 back: every field is type-checked and capped, the receiver is referenced by
 ID and re-resolved against the current list, and export is a `blob:`
@@ -338,9 +367,12 @@ make build        # npm ci + vite build into internal/ui/dist, then go build
 ./kiwi-garden     # prints the one-time URL
 ```
 
-Flags: `-port N`, `-no-cache`, `-v`. `make test` runs `go vet` and the full
-suite (the relay suite takes ~20 s because it waits for real timeouts);
-`make fuzz` runs the six fuzz targets briefly.
+Flags: `-port N`, `-no-cache`, `-v`, and `-dev`, which stores the session
+token in the cache directory (mode 0600) and reuses it across restarts so a
+browser tab survives rebuilds while working on the UI; it prints a warning
+because any process running as you can then read the token. `make test`
+runs `go vet` and the full suite (the relay suite takes ~20 s because it
+waits for real timeouts); `make fuzz` runs the six fuzz targets briefly.
 
 Go dependencies: none outside the standard library. Web dependencies, pinned
 exactly: `three` 0.186.1 at runtime; `vite` 8.3.4, `typescript` 5.9.3,

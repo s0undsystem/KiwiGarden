@@ -306,7 +306,6 @@ async function main(): Promise<void> {
     }
     stopSeek();
     seekDir = dir;
-    tunedByUser = true; // wherever seek lands is now the user's tuning
     for (const b of seekButtons) b.classList.toggle("on", Number(b.dataset.seek) === dir);
     const start = freq;
     const step = (): void => {
@@ -338,8 +337,9 @@ async function main(): Promise<void> {
   async function play(r: Receiver): Promise<void> {
     stopSeek();
     if (!tunedByUser) {
-      // No tuning chosen yet: start from the regional default and, once
-      // audio is flowing, seek upward until something real is on.
+      // The user has not chosen a frequency by hand, so every click is a
+      // fresh hunt: start in the band the sun says is open at this
+      // receiver and, once audio is flowing, seek until something is on.
       const d = defaultFor(r.lat, r.lon);
       freq = d.freq;
       mode = d.mode;
@@ -427,6 +427,7 @@ async function main(): Promise<void> {
   pVol.addEventListener("input", () => player.setVolume(Number(pVol.value) / 100));
   pStop.addEventListener("click", () => {
     stopSeek();
+    tunedByUser = false; // Stop means start over: the next click hunts again
     player.stop();
     setStatus("stopped");
     smeterBar.style.width = "0";
