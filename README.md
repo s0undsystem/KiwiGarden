@@ -4,9 +4,7 @@ from a map, without your browser ever touching one of them. A small Go binary
 runs on your machine. It fetches the receiver list once a day over HTTPS,
 speaks the KiwiSDR WebSocket protocol to whichever receiver you click,
 decodes the receiver's ADPCM audio stream into PCM, and hands that to a page
-it serves on `127.0.0.1`. The page draws the receivers on a globe with a live
-day/night terminator. The browser talks to the relay and nothing else.
-
+it serves locally
 ![865 receivers at 02:31 UTC; Europe on the night side](docs/globe.png)
 
 Security design and the adversarial reviews live in
